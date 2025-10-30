@@ -73,7 +73,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex w-full flex-col items-center justify-center py-32 px-16 bg-white dark:bg-black">
+      <main className="flex w-full flex-col items-center justify-center md:p-16 p-4 bg-white dark:bg-black">
         {!show ? <div className="flex flex-col gap-2 w-full max-w-sm pb-6">
           <label className="text-sm font-medium">Email objednávky</label>
           <input
