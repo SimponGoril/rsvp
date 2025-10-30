@@ -116,14 +116,14 @@ export default function Home() {
                     <td className="py-2">
                       {lesson.isSigned ? (
                         <button
-                          onClick={() => onUnsign(lesson.id)}
+                          onClick={() => {}}
                           className="rounded-xl border px-3 py-1"
                         >
                           Odhlásit
                         </button>
                       ) : (
                         <button
-                          onClick={() => onSignUp(lesson.id)}
+                          onClick={() => {}}
                           className="rounded-xl border px-3 py-1"
                         >
                           Přihlásit
