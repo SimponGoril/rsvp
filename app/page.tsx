@@ -78,7 +78,7 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {lessons.sort((a, b) => new Date(a.date) - new Date(b.date)).map((lesson) => (
+              {lessons.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((lesson) => (
                   <tr key={lesson.id} className="border-b">
                     <td className="py-2 font-bold">{lesson.date}</td>
                     <td className="py-2">{lesson.name}</td>

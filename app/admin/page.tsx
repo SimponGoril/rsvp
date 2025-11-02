@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import supabase from './utils/supabase'
+//import supabase from './utils/supabase'
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
@@ -66,7 +66,7 @@ export default function Home() {
         setLessons([...lessons, newLesson]);
     };
 
-    const handleRemoveLesson = (id) => {
+    const handleRemoveLesson = (id: number) => {
         setLessons((prev) => prev.filter((lesson) => lesson.id !== id));
     };
 
@@ -175,7 +175,7 @@ export default function Home() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {lessons.sort((a, b) => new Date(a.date) - new Date(b.date)).map((lesson) => (
+                                {lessons.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((lesson) => (
                                     <tr key={lesson.id} className="border-b">
                                         <td className="py-2 font-bold">{lesson.date}</td>
                                         <td className="py-2">{lesson.name}</td>
