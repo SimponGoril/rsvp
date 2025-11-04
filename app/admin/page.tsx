@@ -2,79 +2,78 @@
 
 import Image from "next/image";
 
-//import supabase from './utils/supabase'
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-
-const defaultLessons = [
-    {
-        id: 1,
-        name: "Lekce jógy – začátečníci",
-        date: "2025-02-16 17:00",
-        email: "john.doe@seznam.cz",
-        isSigned: true
-    },
-    {
-        id: 5,
-        name: "Lekce jógy – začátečníci",
-        date: "2025-02-19 18:00",
-        email: "carl.smith@seznam.cz",
-        isSigned: true
-    },
-    {
-        id: 4,
-        name: "Lekce jógy – začátečníci",
-        date: "2025-02-19 18:00",
-        email: "karel.smith@seznam.cz",
-        isSigned: true
-    },
-    {
-        id: 2,
-        name: "Pilates – středně pokročilí",
-        date: "2025-02-16 17:00",
-        email: "john.doe@seznam.cz",
-        isSigned: false
-    },
-    {
-        id: 3,
-        name: "Kruhový trénink",
-        date: "2025-02-18 19:30",
-        email: "john.doe@seznam.cz",
-        isSigned: true
-    }
-];
+import supabase from "../utils/supabase";
+import { formatDate } from "../utils/utils";
+import { LessonAttendence } from "../types";
 
 export default function Home() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [show, setShow] = useState(false);
-    const [lessons, setLessons] = useState(defaultLessons)
-    const [newName, setNewName] = useState("");
+    const [lessons, setLessons] = useState<LessonAttendence[]>([])
+    const [newCourseName, setNewCourseName] = useState("Kurzy pro děti");
     const [newEmail, setNewEmail] = useState("");
     const [newDate, setNewDate] = useState("");
     const [newSigned, setNewSigned] = useState(true);
 
-    const handleAddLesson = () => {
+    const handleAddLesson = async () => {
         const newLesson = {
-            id: lessons.length + 1,
-            name: newName,
+            course_name: newCourseName,
             date: newDate,
             email: newEmail,
-            isSigned: newSigned
+            will_attend: newSigned
         };
-        setLessons([...lessons, newLesson]);
+
+        const { data, error } = await supabase
+            .from('attendance')
+            .insert(newLesson)
+            .select()
+
+        if (!error) {
+            setLessons([...lessons, data[0]]);
+        }
     };
 
-    const handleRemoveLesson = (id: number) => {
-        setLessons((prev) => prev.filter((lesson) => lesson.id !== id));
-    };
+    const handleDeleteAttendance = async (id: number) => {
+        const { error } = await supabase
+            .from('attendance')
+            .delete()
+            .eq('id', id)
 
-    // const fetchTodos = async () => {
-    //   const { data } = await supabase.from('orders').select('*')
-    //   console.log(data)
-    // }
-    // fetchTodos() 
+        if (!error) {
+            setLessons((prev) => prev.filter((lesson) => lesson.id !== id));
+        }
+    }
+
+    const fetchAttendance = async () => {
+        const { data } = await supabase.from('attendance').select('*')
+        if (!data?.length) {
+        } else {
+            setShow(true);
+            setLessons(data);
+        }
+    }
+
+    const handleChangeAttendence = async (id: number, will_attend: boolean) => {
+        const { error } = await supabase
+            .from('attendance')
+            .update({ 'will_attend': !will_attend })
+            .eq('id', id);
+
+        if (!error) {
+            setLessons(prev =>
+                prev.map(l =>
+                    l.id === id ? { ...l, will_attend: !will_attend } : l
+                )
+            );
+        }
+    }
+
+    const signIn = () => {
+        fetchAttendance();
+    }
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-white font-sans dark:bg-black">
@@ -97,7 +96,7 @@ export default function Home() {
                         className="border rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <button
-                        onClick={() => { setShow(true) }}
+                        onClick={() => { signIn() }}
                         className="mt-2 rounded-xl border px-4 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:cursor-pointer"
                     >
                         Potvrdit
@@ -113,15 +112,29 @@ export default function Home() {
                             <AccordionContent className="flex flex-col gap-4 text-balance bg-zinc-100 p-2">
                                 <div className="flex flex-col gap-2 w-full pt-4 pb-6 border-b">
                                     <label className="text-sm font-medium">Název lekce</label>
-                                    <select
-                                        value={newName}
-                                        onChange={(e) => setNewName(e.target.value)}
-                                        className="border rounded-xl p-2"
-                                    >
-                                        <option value="">Vyberte lekci</option>
-                                        <option value="Kurzy pro děti">Kurzy pro děti</option>
-                                        <option value="Výtvarný workshop">Výtvarný workshop</option>
-                                    </select>
+                                    <div className="flex flex-row gap-4">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="lesson"
+                                                value="Kurzy pro děti"
+                                                checked={newCourseName === "Kurzy pro děti"}
+                                                onChange={(e) => setNewCourseName(e.target.value)}
+                                            />
+                                            Kurzy pro děti
+                                        </label>
+
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="lesson"
+                                                value="Výtvarný workshop"
+                                                checked={newCourseName === "Výtvarný workshop"}
+                                                onChange={(e) => setNewCourseName(e.target.value)}
+                                            />
+                                            Výtvarný workshop
+                                        </label>
+                                    </div>
                                     <label className="text-sm font-medium">Datum a čas</label>
                                     <input
                                         type="datetime-local"
@@ -177,26 +190,18 @@ export default function Home() {
                             <tbody>
                                 {lessons.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((lesson) => (
                                     <tr key={lesson.id} className="border-b">
-                                        <td className="py-2 font-bold">{lesson.date}</td>
-                                        <td className="py-2">{lesson.name}</td>
+                                        <td className="py-2 font-bold">{formatDate(lesson.date)}</td>
+                                        <td className="py-2">{lesson.course_name}</td>
                                         <td className="py-2">{lesson.email}</td>
-                                        <td className="py-2">{lesson.isSigned ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
+                                        <td className="py-2">{lesson.will_attend ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
                                         <td className="py-2">
-                                            {lesson.isSigned ? (
-                                                <button
-                                                    onClick={() => { }}
-                                                    className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                    Odhlásit
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => { }}
-                                                    className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                    Přihlásit
-                                                </button>
-                                            )}
                                             <button
-                                                onClick={() => handleRemoveLesson(lesson.id)}
+                                                onClick={() => { handleChangeAttendence(lesson.id, lesson.will_attend) }}
+                                                className="rounded-xl border px-3 py-1 cursor-pointer">
+                                                {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteAttendance(lesson.id)}
                                                 className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer"
                                             >
                                                 X
