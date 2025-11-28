@@ -70,17 +70,17 @@ export default function Home() {
     return lessonDate.getTime() > cutoff.getTime(); // po 09:15 skrýt, jinak zobrazit
   }
 
-      const getLessonState = (lesson: LessonAttendence) => {
-        if (lesson.did_not_showed_up) {
-            return <span className="font-bold">Neomluveno ❌</span>
-        } else if (lesson.will_attend && isInPast(lesson.date)) {
-            return <span className="text-gray-600 italic">Proběhla</span>
-        } else if (lesson.will_attend) {
-            return <span className="font-bold">Přihlášen ✅</span>
-        } else {
-            return "Nepřihlášen"
-        }
+  const getLessonState = (lesson: LessonAttendence) => {
+    if (lesson.did_not_showed_up) {
+      return <span className="font-bold">Neomluveno ❌</span>
+    } else if (lesson.will_attend && isInPast(lesson.date)) {
+      return <span className="text-gray-600 italic">Proběhla</span>
+    } else if (lesson.will_attend) {
+      return <span className="font-bold">Přihlášen ✅</span>
+    } else {
+      return "Nepřihlášen"
     }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white font-sans dark:bg-black">
@@ -110,12 +110,17 @@ export default function Home() {
         </div> : undefined}
         {show ? <div className="w-full max-w-4xl">
           <div className="flex justify-between items-center pb-4">
-            <h2 className="font-extrabold">Přihlášen/a jako {email}</h2>
-            <button
-              onClick={() => signOut()}
-              className="mt-2 rounded-xl border px-4 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:cursor-pointer w-32">
-              Odhlásit
-            </button>
+            <div>
+              <h2 className="font-extrabold">Přihlášen/a jako {email}</h2>
+              <h3 className="italic text-gray-700">Počet zbývajících lekcí: {lessons.filter(l => !isInPast(l.date)).length}</h3>
+            </div>
+            <div>
+              <button
+                onClick={() => signOut()}
+                className="mt-2 rounded-xl border px-4 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:cursor-pointer w-32">
+                Odhlásit
+              </button>
+            </div>
           </div>
           {!lessons.length ? <>Je nám líto, ale pro tento email zřejmě neevidujeme žádné rezervace...</> : undefined}
           <div className="flex flex-col gap-2 w-full max-w-4xl overflow-scroll h-96 pt-3">
