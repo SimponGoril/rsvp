@@ -4,7 +4,7 @@ import Image from "next/image";
 
 import supabase from './utils/supabase'
 import { useState } from "react";
-import { formatDate } from "./utils/utils";
+import { formatDate, isInPast } from "./utils/utils";
 import { LessonAttendence } from "./types";
 
 
@@ -41,14 +41,46 @@ export default function Home() {
       .update({ 'will_attend': !will_attend })
       .eq('id', id);
 
-      if (!error) {
-        setLessons(prev =>
-          prev.map(l =>
-            l.id === id ? { ...l, will_attend: !will_attend } : l
-          )
-        );
-      }
+    if (!error) {
+      setLessons(prev =>
+        prev.map(l =>
+          l.id === id ? { ...l, will_attend: !will_attend } : l
+        )
+      );
+    }
   }
+
+  function isAttendanceButtonActive(lessonDateInput: string | Date): boolean {
+    const lessonDate = new Date(lessonDateInput);
+    const now = new Date();
+
+    const lessonYmd = lessonDate.toISOString().slice(0, 10);
+    const todayYmd = now.toISOString().slice(0, 10);
+
+    // Lekce v minulosti → skrýt
+    if (lessonYmd < todayYmd) return true;
+
+    // Lekce v budoucnu → zobrazit
+    if (lessonYmd > todayYmd) return false;
+
+    // Lekce dnes → limit 09:15
+    const cutoff = new Date(now);
+    cutoff.setHours(9, 15, 0, 0);
+
+    return lessonDate.getTime() > cutoff.getTime(); // po 09:15 skrýt, jinak zobrazit
+  }
+
+      const getLessonState = (lesson: LessonAttendence) => {
+        if (lesson.did_not_showed_up) {
+            return <span className="font-bold">Neomluveno ❌</span>
+        } else if (lesson.will_attend && isInPast(lesson.date)) {
+            return <span className="text-gray-600 italic">Proběhla</span>
+        } else if (lesson.will_attend) {
+            return <span className="font-bold">Přihlášen ✅</span>
+        } else {
+            return "Nepřihlášen"
+        }
+    }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white font-sans dark:bg-black">
@@ -101,13 +133,13 @@ export default function Home() {
                   <tr key={lesson.id} className="border-b">
                     <td className="py-2 font-bold">{formatDate(lesson.date)}</td>
                     <td className="py-2">{lesson.course_name}</td>
-                    <td className="py-2">{lesson.will_attend ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
+                    <td className="py-2">{getLessonState(lesson)}</td>
                     <td className="py-2">
-                        <button
-                          onClick={() => {changeAttendence(lesson.id, lesson.will_attend)}}
-                          className="rounded-xl border px-3 py-1 cursor-pointer">
-                          {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
-                        </button>
+                      {isAttendanceButtonActive(lesson.date) ? undefined : <button
+                        onClick={() => { changeAttendence(lesson.id, lesson.will_attend) }}
+                        className="rounded-xl border px-3 py-1 cursor-pointer">
+                        {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
+                      </button>}
                     </td>
                   </tr>
                 ))}

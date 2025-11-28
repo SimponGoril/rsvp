@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import supabase from "../utils/supabase";
-import { formatDate } from "../utils/utils";
+import { formatDate, isInPast } from "../utils/utils";
 import { LessonAttendence } from "../types";
 
 export default function Home() {
@@ -23,7 +23,8 @@ export default function Home() {
             course_name: newCourseName,
             date: newDate,
             email: newEmail,
-            will_attend: newSigned
+            will_attend: newSigned,
+            did_not_showed_up: false
         };
 
         const { data, error } = await supabase
@@ -66,6 +67,21 @@ export default function Home() {
             setLessons(prev =>
                 prev.map(l =>
                     l.id === id ? { ...l, will_attend: !will_attend } : l
+                )
+            );
+        }
+    }
+
+    const handleDidNotShowUp = async (id: number, did_not_showed_up: boolean) => {
+        const { error } = await supabase
+            .from('attendance')
+            .update({ 'did_not_showed_up': !did_not_showed_up })
+            .eq('id', id);
+
+        if (!error) {
+            setLessons(prev =>
+                prev.map(l =>
+                    l.id === id ? { ...l, did_not_showed_up: !did_not_showed_up } : l
                 )
             );
         }
@@ -165,12 +181,12 @@ export default function Home() {
                                         >
                                             Přidat lekci
                                         </button>
-                                        <button
+                                        {/* <button
                                             //onClick={handleAddLesson}
                                             className="mt-2 rounded-xl border px-4 py-2 font-medium bg-black text-white hover:cursor-pointer w-40"
                                         >
                                             Uložit
-                                        </button>
+                                        </button> */}
                                     </div>
                                 </div>
                             </AccordionContent>
@@ -193,18 +209,24 @@ export default function Home() {
                                         <td className="py-2 font-bold">{formatDate(lesson.date)}</td>
                                         <td className="py-2">{lesson.course_name}</td>
                                         <td className="py-2">{lesson.email}</td>
-                                        <td className="py-2">{lesson.will_attend ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
+                                        <td className="py-2">{lesson.did_not_showed_up ? "Neomluveno 💔": lesson.will_attend ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
                                         <td className="py-2">
-                                            <button
+                                            {!isInPast(lesson.date) ? <button
                                                 onClick={() => { handleChangeAttendence(lesson.id, lesson.will_attend) }}
                                                 className="rounded-xl border px-3 py-1 cursor-pointer">
                                                 {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
-                                            </button>
+                                            </button> :
+                                                lesson.will_attend ? < button
+                                                    onClick={() => handleDidNotShowUp(lesson.id, lesson.did_not_showed_up || false)}
+                                                    className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                    {!lesson.did_not_showed_up ? "Neomluveno" : "Omluveno"}
+                                                </button> : undefined
+
+                                            }
                                             <button
                                                 onClick={() => handleDeleteAttendance(lesson.id)}
-                                                className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer"
-                                            >
-                                                X
+                                                className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                Smazat
                                             </button>
                                         </td>
                                     </tr>
@@ -212,8 +234,9 @@ export default function Home() {
                             </tbody>
                         </table>
                     </div>
-                </div> : undefined}
-            </main>
-        </div>
+                </div> : undefined
+                }
+            </main >
+        </div >
     );
 }

@@ -4,4 +4,5 @@ export type LessonAttendence = {
     date: string;
     email: string;
     will_attend: boolean;
+    did_not_showed_up: boolean;
   };
