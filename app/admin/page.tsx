@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import supabase from "../utils/supabase";
-import { formatDate, isInPast } from "../utils/utils";
+import { formatDate, isInPast, isToday } from "../utils/utils";
 import { LessonAttendence } from "../types";
 
 export default function Home() {
@@ -90,6 +90,79 @@ export default function Home() {
     const signIn = () => {
         fetchAttendance();
     }
+
+    const mapLessons = (
+        lessons: LessonAttendence[]
+    ): Record<string, LessonAttendence[]> => {
+        const result: Record<string, LessonAttendence[]> = {};
+
+        for (const lesson of lessons) {
+            const d = new Date(lesson.date);
+            const fullDate = d.toISOString().slice(0, 10); // YYYY-MM-DD
+            const key = `${fullDate}`;
+
+            if (!result[key]) {
+                result[key] = [];
+            }
+
+            result[key].push(lesson);
+        }
+        return result;
+    }
+
+    const LessonTables = (data: Record<string, LessonAttendence[]>) => {
+        return (
+            <Accordion type="multiple" className="w-full" defaultValue={[Object.keys(data).find(k => isToday(k)) ?? ""]}>
+                {Object.entries(data).sort().reverse().map(([key, participants]) => (
+                    <AccordionItem key={key} value={key}>
+                        <AccordionTrigger><div className="font-bold text-2xl cursor-pointer">{key} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
+                        <AccordionContent>
+                            <table className="border-collapse border border-gray-400 w-full">
+                                <thead>
+                                    <tr>
+                                        <th className="border px-2 py-1">Čas</th>
+                                        <th className="border px-2 py-1">Kurz</th>
+                                        <th className="border px-2 py-1">Email</th>
+                                        <th className="border px-2 py-1">Účast</th>
+                                        <th className="border px-2 py-1">Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {participants.map((p) => (
+                                        <tr key={p.id}>
+                                            <td className="border px-2 py-1 text-center">{formatDate(p.date)}</td>
+                                            <td className="border px-2 py-1 text-center">{p.course_name}</td>
+                                            <td className="border px-2 py-1 text-center">{p.email}</td>
+                                            <td className="border px-2 py-1 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
+                                            <td className="border px-2 py-1 text-center">
+                                                {!isInPast(p.date) ? <button
+                                                    onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
+                                                    className="rounded-xl border px-3 py-1 cursor-pointer">
+                                                    {p.will_attend ? "Odhlásit" : "Přihlásit"}
+                                                </button> :
+                                                    p.will_attend ? < button
+                                                        onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
+                                                        className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                        {!p.did_not_showed_up ? "Neomluveno" : "Omluveno"}
+                                                    </button> : undefined
+
+                                                }
+                                                <button
+                                                    onClick={() => handleDeleteAttendance(p.id)}
+                                                    className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                    Smazat
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </AccordionContent>
+                    </AccordionItem>
+                ))}
+            </Accordion>
+        );
+    };
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-white font-sans dark:bg-black">
@@ -193,46 +266,7 @@ export default function Home() {
                         </AccordionItem>
                     </Accordion>
                     <div className="flex flex-col gap-2 w-full pt-3">
-                        <table className="w-full border-collapse text-sm">
-                            <thead>
-                                <tr className="border-b">
-                                    <th className="py-2 text-left">Datum</th>
-                                    <th className="py-2 text-left">Lekce</th>
-                                    <th className="py-2 text-left">Email</th>
-                                    <th className="py-2 text-left">Stav</th>
-                                    <th className="py-2 text-left">Akce</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lessons.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((lesson) => (
-                                    <tr key={lesson.id} className="border-b">
-                                        <td className="py-2 font-bold">{formatDate(lesson.date)}</td>
-                                        <td className="py-2">{lesson.course_name}</td>
-                                        <td className="py-2">{lesson.email}</td>
-                                        <td className="py-2">{lesson.did_not_showed_up ? "Neomluveno 💔": lesson.will_attend ? "Přihlášen ✅" : "Nepřihlášen ❌"}</td>
-                                        <td className="py-2">
-                                            {!isInPast(lesson.date) ? <button
-                                                onClick={() => { handleChangeAttendence(lesson.id, lesson.will_attend) }}
-                                                className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
-                                            </button> :
-                                                lesson.will_attend ? < button
-                                                    onClick={() => handleDidNotShowUp(lesson.id, lesson.did_not_showed_up || false)}
-                                                    className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                    {!lesson.did_not_showed_up ? "Neomluveno" : "Omluveno"}
-                                                </button> : undefined
-
-                                            }
-                                            <button
-                                                onClick={() => handleDeleteAttendance(lesson.id)}
-                                                className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                Smazat
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        {LessonTables(mapLessons(lessons))}
                     </div>
                 </div> : undefined
                 }
