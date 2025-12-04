@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import supabase from "../utils/supabase";
 import { formatDate, isInPast, isToday } from "../utils/utils";
@@ -17,6 +17,13 @@ export default function Home() {
     const [newEmail, setNewEmail] = useState("");
     const [newDate, setNewDate] = useState("");
     const [newSigned, setNewSigned] = useState(true);
+
+    const peopleMap = lessons.reduce<Record<string, LessonAttendence[]>>((acc, lesson) => {
+            const key = lesson.email ?? "unknown";
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(lesson);
+            return acc;
+    }, {});
 
     const handleAddLesson = async () => {
         const newLesson = {
@@ -98,8 +105,8 @@ export default function Home() {
 
         for (const lesson of lessons) {
             const d = new Date(lesson.date);
-            const fullDate = d.toISOString().slice(0, 10); // YYYY-MM-DD
-            const key = `${fullDate}`;
+            const fullDate = d.toISOString().slice(0, 16); // YYYY-MM-DD
+            const key = `${lesson.course_name}-${fullDate}`;
 
             if (!result[key]) {
                 result[key] = [];
@@ -111,52 +118,77 @@ export default function Home() {
     }
 
     const LessonTables = (data: Record<string, LessonAttendence[]>) => {
+        function formatLessonHeading(input: string) {
+            const match = input.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/);
+            if (!match) return null;
+
+            const dateString = match[1];
+            const courseName = input.replace(dateString, "").replace(/[-\s]+$/, "");
+
+            const d = new Date(dateString);
+
+            const weekday = d.toLocaleDateString("cs-CZ", { weekday: "long" });
+            const hours = String(d.getHours()).padStart(2, "0");
+            const minutes = String(d.getMinutes()).padStart(2, "0");
+
+            return `${courseName} ${weekday} ${hours}:${minutes}`;
+        }
+
         return (
             <Accordion type="multiple" className="w-full" defaultValue={[Object.keys(data).find(k => isToday(k)) ?? ""]}>
                 {Object.entries(data).sort().reverse().map(([key, participants]) => (
                     <AccordionItem key={key} value={key}>
-                        <AccordionTrigger><div className="font-bold text-2xl cursor-pointer">{key} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
+                        <AccordionTrigger><div className="font-bold text-2xl cursor-pointer">{formatLessonHeading(key)} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
                         <AccordionContent>
-                            <table className="border-collapse border border-gray-400 w-full">
-                                <thead>
-                                    <tr>
-                                        <th className="border px-2 py-1">Čas</th>
-                                        <th className="border px-2 py-1">Kurz</th>
-                                        <th className="border px-2 py-1">Email</th>
-                                        <th className="border px-2 py-1">Účast</th>
-                                        <th className="border px-2 py-1">Akce</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {participants.map((p) => (
-                                        <tr key={p.id}>
-                                            <td className="border px-2 py-1 text-center">{formatDate(p.date)}</td>
-                                            <td className="border px-2 py-1 text-center">{p.course_name}</td>
-                                            <td className="border px-2 py-1 text-center">{p.email}</td>
-                                            <td className="border px-2 py-1 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
-                                            <td className="border px-2 py-1 text-center">
-                                                {!isInPast(p.date) ? <button
-                                                    onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
-                                                    className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                    {p.will_attend ? "Odhlásit" : "Přihlásit"}
-                                                </button> :
-                                                    p.will_attend ? < button
-                                                        onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
-                                                        className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                        {!p.did_not_showed_up ? "Neomluveno" : "Omluveno"}
-                                                    </button> : undefined
-
-                                                }
-                                                <button
-                                                    onClick={() => handleDeleteAttendance(p.id)}
-                                                    className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                    Smazat
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            {Array.from(new Set(participants.map(p => p.email ?? "unknown"))).map((emailKey) => {
+                                const userLessons = peopleMap[emailKey] ?? [];
+                                return (
+                                    <Accordion key={emailKey} type="multiple" className="w-full">
+                                        <AccordionItem key={`${key}-${emailKey}`} value={`${key}-${emailKey}`}>
+                                            <AccordionTrigger><div className="ml-4">{emailKey}</div></AccordionTrigger>
+                                            <AccordionContent>
+                                                <table className="border-collapse border border-gray-400 w-full">
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="border px-2 py-1">Datum</th>
+                                                            <th className="border px-2 py-1">Účast</th>
+                                                            <th className="border px-2 py-1">Akce</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {userLessons.map((p) => (
+                                                            <tr key={p.id}>
+                                                                <td className="border px-2 py-1 text-center">{formatDate(p.date)}</td>
+                                                                <td className="border px-2 py-1 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
+                                                                <td className="border px-2 py-1 text-center">
+                                                                    {!isInPast(p.date) ? (
+                                                                        <button
+                                                                            onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
+                                                                            className="rounded-xl border px-3 py-1 cursor-pointer">
+                                                                            {p.will_attend ? "Odhlásit" : "Přihlásit"}
+                                                                        </button>
+                                                                    ) : p.will_attend ? (
+                                                                        <button
+                                                                            onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
+                                                                            className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                                            {!p.did_not_showed_up ? "Neomluveno" : "Omluveno"}
+                                                                        </button>
+                                                                    ) : undefined}
+                                                                    <button
+                                                                        onClick={() => handleDeleteAttendance(p.id)}
+                                                                        className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                                        Smazat
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    </Accordion>
+                                )
+                            })}
                         </AccordionContent>
                     </AccordionItem>
                 ))}
