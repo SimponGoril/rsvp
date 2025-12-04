@@ -2,11 +2,16 @@
 
 import Image from "next/image";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import supabase from "../utils/supabase";
 import { formatDate, isInPast, isToday } from "../utils/utils";
 import { LessonAttendence } from "../types";
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function Home() {
     const [email, setEmail] = useState("");
@@ -18,12 +23,12 @@ export default function Home() {
     const [newDate, setNewDate] = useState("");
     const [newSigned, setNewSigned] = useState(true);
 
-    const peopleMap = lessons.reduce<Record<string, LessonAttendence[]>>((acc, lesson) => {
-            const key = lesson.email ?? "unknown";
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(lesson);
-            return acc;
-    }, {});
+    // const peopleMap = lessons.reduce<Record<string, LessonAttendence[]>>((acc, lesson) => {
+    //     const key = lesson.email ?? "unknown";
+    //     if (!acc[key]) acc[key] = [];
+    //     acc[key].push(lesson);
+    //     return acc;
+    // }, {});
 
     const handleAddLesson = async () => {
         const newLesson = {
@@ -102,16 +107,17 @@ export default function Home() {
         lessons: LessonAttendence[]
     ): Record<string, LessonAttendence[]> => {
         const result: Record<string, LessonAttendence[]> = {};
+        const timeZone = 'Europe/Prague';
 
         for (const lesson of lessons) {
-            const d = new Date(lesson.date);
-            const fullDate = d.toISOString().slice(0, 16); // YYYY-MM-DD
+            const d = dayjs.tz(String(lesson.date), timeZone);
+            const fullDate = d.format("YYYY-MM-DDTHH:mm");
             const key = `${lesson.course_name}-${fullDate}`;
 
             if (!result[key]) {
                 result[key] = [];
             }
-
+            
             result[key].push(lesson);
         }
         return result;
@@ -141,7 +147,18 @@ export default function Home() {
                         <AccordionTrigger><div className="font-bold text-2xl cursor-pointer">{formatLessonHeading(key)} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
                         <AccordionContent>
                             {Array.from(new Set(participants.map(p => p.email ?? "unknown"))).map((emailKey) => {
-                                const userLessons = peopleMap[emailKey] ?? [];
+                                const userLessons = lessons.filter(l => {
+                                    if (l.email !== emailKey) return false;
+                                    if (!key.includes(l.course_name)) return false;
+                                    // force string to silence TS about possible undefined
+                                    const keyDate = new Date(String(key.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)?.[1]));
+                                    // console.log(keyDate.getDay(), keyDate.getHours(), keyDate.getMinutes())
+                                    const d = new Date(l.date);
+                                    console.log('a',d.getDay(), d.getHours())
+                                    console.log('b',key, keyDate.getDay(), keyDate.getHours())
+                                    return keyDate.getDay() === d.getDay() && keyDate.getHours() === d.getHours();
+                                }) ?? [];
+                                
                                 return (
                                     <Accordion key={emailKey} type="multiple" className="w-full">
                                         <AccordionItem key={`${key}-${emailKey}`} value={`${key}-${emailKey}`}>
@@ -151,6 +168,7 @@ export default function Home() {
                                                     <thead>
                                                         <tr>
                                                             <th className="border px-2 py-1">Datum</th>
+                                                            <th className="border px-2 py-1">Kurz</th>
                                                             <th className="border px-2 py-1">Účast</th>
                                                             <th className="border px-2 py-1">Akce</th>
                                                         </tr>
@@ -159,6 +177,7 @@ export default function Home() {
                                                         {userLessons.map((p) => (
                                                             <tr key={p.id}>
                                                                 <td className="border px-2 py-1 text-center">{formatDate(p.date)}</td>
+                                                                <td className="border px-2 py-1 text-center">{p.course_name}</td>
                                                                 <td className="border px-2 py-1 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
                                                                 <td className="border px-2 py-1 text-center">
                                                                     {!isInPast(p.date) ? (
