@@ -103,27 +103,31 @@ export default function Home() {
         fetchAttendance();
     }
 
-    const mapLessons = (
+    // Group lessons first by year-month (e.g. "2025-12"), then by lesson
+    // key (course + datetime). This lets the UI show month headings and
+    // lessons inside each month.
+    const mapLessonsByMonth = (
         lessons: LessonAttendence[]
-    ): Record<string, LessonAttendence[]> => {
-        const result: Record<string, LessonAttendence[]> = {};
+    ): Record<string, Record<string, LessonAttendence[]>> => {
+        const result: Record<string, Record<string, LessonAttendence[]>> = {};
         const timeZone = 'Europe/Prague';
 
         for (const lesson of lessons) {
             const d = dayjs.tz(String(lesson.date), timeZone);
+            const monthKey = d.format('YYYY-MM'); // grouping key by month
             const fullDate = d.format("YYYY-MM-DDTHH:mm");
-            const key = `${lesson.course_name}-${fullDate}`;
+            const lessonKey = `${lesson.course_name}-${fullDate}`;
 
-            if (!result[key]) {
-                result[key] = [];
-            }
-            
-            result[key].push(lesson);
+            if (!result[monthKey]) result[monthKey] = {};
+            if (!result[monthKey][lessonKey]) result[monthKey][lessonKey] = [];
+
+            result[monthKey][lessonKey].push(lesson);
         }
+
         return result;
     }
 
-    const LessonTables = (data: Record<string, LessonAttendence[]>) => {
+    const LessonTables = (data: Record<string, Record<string, LessonAttendence[]>>) => {
         function formatLessonHeading(input: string) {
             const match = input.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/);
             if (!match) return null;
@@ -139,78 +143,94 @@ export default function Home() {
 
             return `${courseName} ${weekday} ${hours}:${minutes}`;
         }
+        // Default open month: the first month that contains a lesson happening today
+        const defaultOpenMonth = Object.entries(data).find(([, lessonsMap]) =>
+            Object.keys(lessonsMap).some(k => isToday(k))
+        )?.[0] ?? "";
 
         return (
-            <Accordion type="multiple" className="w-full" defaultValue={[Object.keys(data).find(k => isToday(k)) ?? ""]}>
-                {Object.entries(data).sort().reverse().map(([key, participants]) => (
-                    <AccordionItem key={key} value={key}>
-                        <AccordionTrigger><div className="font-bold text-2xl cursor-pointer">{formatLessonHeading(key)} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
-                        <AccordionContent>
-                            {Array.from(new Set(participants.map(p => p.email ?? "unknown"))).map((emailKey) => {
-                                const userLessons = lessons.filter(l => {
-                                    if (l.email !== emailKey) return false;
-                                    if (!key.includes(l.course_name)) return false;
-                                    // force string to silence TS about possible undefined
-                                    const keyDate = new Date(String(key.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)?.[1]));
-                                    // console.log(keyDate.getDay(), keyDate.getHours(), keyDate.getMinutes())
-                                    const d = new Date(l.date);
-                                    console.log('a',d.getDay(), d.getHours())
-                                    console.log('b',key, keyDate.getDay(), keyDate.getHours())
-                                    return keyDate.getDay() === d.getDay() && keyDate.getHours() === d.getHours();
-                                }) ?? [];
-                                
-                                return (
-                                    <Accordion key={emailKey} type="multiple" className="w-full">
-                                        <AccordionItem key={`${key}-${emailKey}`} value={`${key}-${emailKey}`}>
-                                            <AccordionTrigger><div className="ml-4">{emailKey}</div></AccordionTrigger>
+            <Accordion type="multiple" className="w-full" defaultValue={[defaultOpenMonth]}>
+                {Object.entries(data).sort().map(([monthKey, lessonsMap]) => {
+                    // Human readable month label, using locale for month name
+                    const [year, monthNum] = monthKey.split('-');
+                    const monthLabel = new Date(Number(year), Number(monthNum) - 1, 1).toLocaleString('cs-CZ', { month: 'long', year: 'numeric' });
+
+                    return (
+                        <AccordionItem key={monthKey} value={monthKey}>
+                            <AccordionTrigger>
+                                <div className="text-2xl font-bold py-2">{monthLabel}</div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <Accordion type="multiple" className="w-full" defaultValue={[Object.keys(lessonsMap).find(k => isToday(k)) ?? ""]}>
+                                    {Object.entries(lessonsMap).sort().reverse().map(([key, participants]) => (
+                                        <AccordionItem key={key} value={key}>
+                                            <AccordionTrigger><div className="font-bold text-xl cursor-pointer">{formatLessonHeading(key)} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}</div></AccordionTrigger>
                                             <AccordionContent>
-                                                <table className="border-collapse border border-gray-400 w-full">
-                                                    <thead>
-                                                        <tr>
-                                                            <th className="border px-2 py-1">Datum</th>
-                                                            <th className="border px-2 py-1">Kurz</th>
-                                                            <th className="border px-2 py-1">Účast</th>
-                                                            <th className="border px-2 py-1">Akce</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {userLessons.map((p) => (
-                                                            <tr key={p.id}>
-                                                                <td className="border px-2 py-1 text-center">{formatDate(p.date)}</td>
-                                                                <td className="border px-2 py-1 text-center">{p.course_name}</td>
-                                                                <td className="border px-2 py-1 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
-                                                                <td className="border px-2 py-1 text-center">
-                                                                    {!isInPast(p.date) ? (
-                                                                        <button
-                                                                            onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
-                                                                            className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                                            {p.will_attend ? "Odhlásit" : "Přihlásit"}
-                                                                        </button>
-                                                                    ) : p.will_attend ? (
-                                                                        <button
-                                                                            onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
-                                                                            className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                                            {!p.did_not_showed_up ? "Neomluveno" : "Omluveno"}
-                                                                        </button>
-                                                                    ) : undefined}
-                                                                    <button
-                                                                        onClick={() => handleDeleteAttendance(p.id)}
-                                                                        className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                                        Smazat
-                                                                    </button>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
+                                                {Array.from(new Set(participants.map(p => p.email ?? "unknown"))).map((emailKey) => {
+                                                    const userLessons = lessons.filter(l => {
+                                                        if (l.email !== emailKey) return false;
+                                                        if (!key.includes(l.course_name)) return false;
+                                                        // force string to silence TS about possible undefined
+                                                        const keyDate = new Date(String(key.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)?.[1]));
+                                                        const d = new Date(l.date);
+                                                        return keyDate.getDay() === d.getDay() && keyDate.getHours() === d.getHours();
+                                                    }) ?? [];
+                                                    
+                                                    return (
+                                                        <Accordion key={emailKey} type="multiple" className="w-full">
+                                                            <AccordionItem key={`${key}-${emailKey}`} value={`${key}-${emailKey}`}>
+                                                                <AccordionTrigger><div className="ml-4">{emailKey}</div></AccordionTrigger>
+                                                                <AccordionContent>
+                                                                    <table className="border-collapse border border-gray-400 w-full">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th className="border px-2 py-1">Datum</th>
+                                                                                <th className="border px-2 py-1">Účast</th>
+                                                                                <th className="border px-2 py-1">Akce</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {userLessons.map((p) => (
+                                                                                <tr key={p.id}>
+                                                                                    <td className="border px-2 text-center">{formatDate(p.date)}</td>
+                                                                                    <td className="border px-2 text-center">{p.did_not_showed_up ? "Neomluvena 💔" : p.will_attend ? "Přihlášena ✅" : "Nepřihlášena ❌"}</td>
+                                                                                    <td className="border px-2 text-center">
+                                                                                        {!isInPast(p.date) ? (
+                                                                                            <button
+                                                                                                onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
+                                                                                                className="rounded-xl border px-3 py-1 cursor-pointer">
+                                                                                                {p.will_attend ? "Odhlásit" : "Přihlásit"}
+                                                                                            </button>
+                                                                                        ) : p.will_attend ? (
+                                                                                            <button
+                                                                                                onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
+                                                                                                className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                                                                {!p.did_not_showed_up ? "Neomluveno" : "Omluveno"}
+                                                                                            </button>
+                                                                                        ) : undefined}
+                                                                                        <button
+                                                                                            onClick={() => handleDeleteAttendance(p.id)}
+                                                                                            className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
+                                                                                            Smazat
+                                                                                        </button>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </AccordionContent>
+                                                            </AccordionItem>
+                                                        </Accordion>
+                                                    )
+                                                })}
                                             </AccordionContent>
                                         </AccordionItem>
-                                    </Accordion>
-                                )
-                            })}
-                        </AccordionContent>
-                    </AccordionItem>
-                ))}
+                                    ))}
+                                </Accordion>
+                            </AccordionContent>
+                        </AccordionItem>
+                    )
+                })}
             </Accordion>
         );
     };
@@ -242,7 +262,7 @@ export default function Home() {
                         Potvrdit
                     </button>
                 </div> : undefined}
-                {show ? <div className="w-full max-w-3/4 flex justify-center align-center flex-col">
+                {show ? <div className="w-full lg:max-w-3/4 flex justify-center align-center flex-col">
                     <Accordion
                         type="single"
                         collapsible
@@ -257,13 +277,32 @@ export default function Home() {
                                             <input
                                                 type="radio"
                                                 name="lesson"
-                                                value="Kurzy pro děti"
-                                                checked={newCourseName === "Kurzy pro děti"}
+                                                value="Kurz kresby a malby pro děti"
+                                                checked={newCourseName === "Kurz kresby a malby pro děti"}
                                                 onChange={(e) => setNewCourseName(e.target.value)}
                                             />
-                                            Kurzy pro děti
+                                            Kurz kresby a malby pro děti
                                         </label>
-
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="lesson"
+                                                value="Příprava na talentové zkoušky"
+                                                checked={newCourseName === "Příprava na talentové zkoušky"}
+                                                onChange={(e) => setNewCourseName(e.target.value)}
+                                            />
+                                            Příprava na talentové zkoušky
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="lesson"
+                                                value="Intenzivní kurz kresby a malby pro mládež"
+                                                checked={newCourseName === "Intenzivní kurz kresby a malby pro mládež"}
+                                                onChange={(e) => setNewCourseName(e.target.value)}
+                                            />
+                                            Intenzivní kurz kresby a malby pro mládež
+                                        </label>
                                         <label className="flex items-center gap-2">
                                             <input
                                                 type="radio"
@@ -317,7 +356,7 @@ export default function Home() {
                         </AccordionItem>
                     </Accordion>
                     <div className="flex flex-col gap-2 w-full pt-3">
-                        {LessonTables(mapLessons(lessons))}
+                        {LessonTables(mapLessonsByMonth(lessons))}
                     </div>
                 </div> : undefined
                 }
