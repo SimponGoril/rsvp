@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
 import supabase from "../utils/supabase";
-import { formatDate, isInPast, isToday } from "../utils/utils";
+import { isInPast, isToday } from "../utils/utils";
 import { LessonAttendence } from "../types";
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -138,6 +138,7 @@ export default function Home() {
 
             return `${courseName} ${weekday} ${hours}:${minutes}`;
         }
+
         const data = getLessonsForDate(selectedDate);
 
         return (
@@ -145,74 +146,51 @@ export default function Home() {
                 {Object.entries(data).sort().reverse().map(([key, participants]) => (
                     <AccordionItem key={key} value={key}>
                         <AccordionTrigger>
-                            <div className="font-bold text-xl cursor-pointer">
-                                {formatLessonHeading(key)} {isToday(key) ? <span className="italic text-gray-400">(dnes)</span> : undefined}
+                            <div className="font-semibold text-base">
+                                {formatLessonHeading(key)} {isToday(key) ? <span className="ml-2 italic text-blue-600 dark:text-blue-400 text-sm font-normal">(dnes)</span> : undefined}
                             </div>
                         </AccordionTrigger>
                         <AccordionContent>
-                            {Array.from(new Set(participants.map(p => p.email ?? 'unknown'))).map((emailKey) => {
-                                // Parse course name and time from the lesson key
-                                const match = key.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/);
-                                const keyDateStr = match?.[1];
-                                const courseNameFromKey = keyDateStr ? key.replace(keyDateStr, '').replace(/[-\s]+$/, '') : '';
-                                const keyDt = keyDateStr ? dayjs.tz(keyDateStr, 'Europe/Prague') : null;
-
-                                // Find all lessons for this user that match same course name + weekday + time
-                                const userLessons = lessons.filter(l => {
-                                    if (l.email !== emailKey) return false;
-                                    if (l.course_name !== courseNameFromKey) return false;
-                                    if (!keyDt) return false;
-                                    const ld = dayjs.tz(String(l.date), 'Europe/Prague');
-                                    return ld.day() === keyDt.day() && ld.hour() === keyDt.hour() && ld.minute() === keyDt.minute();
-                                })?.sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf()) ?? [];
-
-                                return (
-                                    <Accordion key={emailKey} type="multiple" className="w-full">
-                                        <AccordionItem key={`${key}-${emailKey}`} value={`${key}-${emailKey}`}>
-                                            <AccordionTrigger><div className="ml-4">{emailKey}</div></AccordionTrigger>
-                                            <AccordionContent>
-                                                <table className="border-collapse border border-gray-400 w-full">
-                                                    <thead>
-                                                        <tr>
-                                                            <th className="border px-2 py-1">Datum</th>
-                                                            <th className="border px-2 py-1">Účast</th>
-                                                            <th className="border px-2 py-1">Akce</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {userLessons.map((p) => (
-                                                            <tr key={p.id}>
-                                                                <td className="border px-2 text-center">{formatDate(p.date)}</td>
-                                                                <td className="border px-2 text-center">{p.did_not_showed_up ? 'Neomluvena 💔' : p.will_attend ? 'Přihlášena ✅' : 'Nepřihlášena ❌'}</td>
-                                                                <td className="border px-2 text-center">
-                                                                    {!isInPast(p.date) ? (
-                                                                        <button
-                                                                            onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
-                                                                            className="rounded-xl border px-3 py-1 cursor-pointer">
-                                                                            {p.will_attend ? 'Odhlásit' : 'Přihlásit'}
-                                                                        </button>
-                                                                    ) : p.will_attend ? (
-                                                                        <button
-                                                                            onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
-                                                                            className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                                            {!p.did_not_showed_up ? 'Neomluveno' : 'Omluveno'}
-                                                                        </button>
-                                                                    ) : undefined}
-                                                                    <button
-                                                                        onClick={() => handleDeleteAttendance(p.id)}
-                                                                        className="rounded-xl border ml-2 px-3 py-1 text-red-600 cursor-pointer">
-                                                                        Smazat
-                                                                    </button>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </AccordionContent>
-                                        </AccordionItem>
-                                    </Accordion>
-                                );
-                            })}
+                            {/* Show a single table of attendees for this course session (selected day) */}
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-gray-100 dark:bg-gray-800">
+                                            <th className="px-1 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Email</th>
+                                            <th className="px-1 py-2 text-center font-semibold text-gray-700 dark:text-gray-300">Účast</th>
+                                            <th className="px-1 py-2 text-center font-semibold text-gray-700 dark:text-gray-300">Akce</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {participants.map((p) => (
+                                            <tr key={p.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                                <td className="px-1 py-3 text-gray-800 dark:text-gray-200">{p.email ?? 'unknown'}</td>
+                                                <td className="px-1 py-3 text-center">{p.did_not_showed_up ? 'Neomluvena 💔' : p.will_attend ? 'Přihlášena ✅' : 'Nepřihlášena ❌'}</td>
+                                                <td className="px-1 py-3 text-center flex gap-1 justify-center">
+                                                    {!isInPast(p.date) ? (
+                                                        <button
+                                                            onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
+                                                            className="rounded-lg border border-gray-300 dark:border-gray-600 px-1 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
+                                                            {p.will_attend ? 'Odhlásit' : 'Přihlásit'}
+                                                        </button>
+                                                    ) : p.will_attend ? (
+                                                        <button
+                                                            onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
+                                                            className="rounded-lg border border-red-300 dark:border-red-600 px-1 py-1.5 text-red-600 dark:text-red-400 cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium">
+                                                            {!p.did_not_showed_up ? 'Neomluveno' : 'Omluveno'}
+                                                        </button>
+                                                    ) : undefined}
+                                                    <button
+                                                        onClick={() => handleDeleteAttendance(p.id)}
+                                                        className="rounded-lg border border-red-300 dark:border-red-600 px-1 py-1.5 text-red-600 dark:text-red-400 cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium">
+                                                        Smazat
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </AccordionContent>
                     </AccordionItem>
                 ))}
@@ -228,9 +206,9 @@ export default function Home() {
         });
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-white font-sans dark:bg-black">
+        <div className="flex min-h-screen items-start justify-center bg-white font-sans dark:bg-black">
             <main className="flex w-full flex-col items-center justify-center md:p-16 p-4 bg-white dark:bg-black">
-                {!show ? <div className="flex flex-col gap-2 w-full max-w-sm pb-6">
+                {!show ? <div className="flex flex-col gap-2 w-full max-w-sm pb-6 pt-60 items-center">
                     <label className="text-sm font-medium">Vstup do Administrace docházky</label>
                     <input
                         type="email"
@@ -260,11 +238,11 @@ export default function Home() {
                         collapsible
                         className="w-full">
                         <AccordionItem value="item-1">
-                            <AccordionTrigger className="bg-zinc-100 p-2">Přidat jednu lekci</AccordionTrigger>
-                            <AccordionContent className="flex flex-col gap-4 text-balance bg-zinc-100 p-2">
-                                <div className="flex flex-col gap-2 w-full pt-4 pb-6 border-b">
+                            <AccordionTrigger>Přidat jednu lekci</AccordionTrigger>
+                            <AccordionContent className="flex flex-col gap-4">
+                                <div className="flex flex-col gap-2 w-full pt-2 pb-2 border-b border-gray-200 dark:border-gray-700">
                                     <label className="text-sm font-medium">Název lekce</label>
-                                    <div className="flex flex-row gap-4">
+                                    <div className="flex flex-col gap-4">
                                         <label className="flex items-center gap-2">
                                             <input
                                                 type="radio"
@@ -353,9 +331,16 @@ export default function Home() {
                             selected={date}
                             onSelect={setDate}
                             highlightedDates={highlightedDates}
-                            className="rounded-md border shadow-sm lg:w-1/4"
+                            className="rounded-md border shadow-sm"
                             captionLayout="dropdown"
                         />
+                    </div>
+                    <div className="w-full flex justify-center mt-2">
+                        <h2 className="text-lg font-semibold text-center">
+                            {date
+                                ? new Date(date).toLocaleDateString('cs-CZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                                : 'Nevybrali jste žádné datum'}
+                        </h2>
                     </div>
                     <div className="flex flex-col gap-2 w-full pt-3">
                         {LessonTables(date)}
