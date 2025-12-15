@@ -8,12 +8,14 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { Calendar } from "../components/ui/calendar";
+import { validateAdminCredentials } from "../utils/validateAdmin";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 export default function Home() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+    const [loginError, setLoginError] = useState("");
+    const [email, setEmail] = useState("admin");
+    const [password, setPassword] = useState("admin");
     const [show, setShow] = useState(false);
     const [lessons, setLessons] = useState<LessonAttendence[]>([])
     const [newCourseName, setNewCourseName] = useState("Kurzy pro děti");
@@ -98,8 +100,12 @@ export default function Home() {
         }
     }
 
-    const signIn = () => {
-        fetchAttendance();
+    const signIn = async () => {
+        if (await validateAdminCredentials(email, password)) {
+            fetchAttendance();
+        } else {
+            setLoginError("Neplatné přihlašovací údaje");
+        }
     }
 
     // Get lessons for the selected date (based on the calendar input).
@@ -165,7 +171,7 @@ export default function Home() {
                                         {participants.map((p) => (
                                             <tr key={p.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                                                 <td className="px-1 py-3 text-gray-800 dark:text-gray-200">{p.email ?? 'unknown'}</td>
-                                                <td className="px-1 py-3 text-center">{p.did_not_showed_up ? 'Neomluvena 💔' : p.will_attend ? 'Přihlášena ✅' : 'Nepřihlášena ❌'}</td>
+                                                <td className="px-1 py-3 text-center">{p.did_not_showed_up ? 'Neomluvena 🚫' : p.will_attend ? 'Přihlášena ✅' : 'Nepřihlášena ❌'}</td>
                                                 <td className="px-1 py-3 text-center flex gap-1 justify-center">
                                                     {!isInPast(p.date) ? (
                                                         <button
@@ -217,7 +223,6 @@ export default function Home() {
                         placeholder="Uživatelské jméno"
                         className="border rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-
                     <input
                         type="password"
                         value={password}
@@ -225,6 +230,7 @@ export default function Home() {
                         placeholder="Heslo"
                         className="border rounded-xl p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                    {loginError ? <span className="text-red-600 pl-2">{loginError}</span> : undefined}
                     <button
                         onClick={() => { signIn() }}
                         className="mt-2 rounded-xl border px-4 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:cursor-pointer"

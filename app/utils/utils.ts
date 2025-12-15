@@ -8,7 +8,7 @@ export const formatDate = (isoString: string) => {
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
 
-  return `${day}.${month}`;
+  return `${day}.${month} ${hours}:${minutes}`;
 };
 
 export const isInPast = (dateInput: string): boolean => {
