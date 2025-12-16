@@ -36,17 +36,85 @@ export default function Home() {
   }
 
   const changeAttendence = async (id: number, will_attend: boolean) => {
+    const lesson = lessons.find(l => l.id === id);
+    if (!lesson) return;
+
+    const isUnsigning = will_attend; // if will_attend is true, they're currently signed in, so unsigning
+
+    // Update the current lesson
     const { error } = await supabase
       .from('attendance')
       .update({ 'will_attend': !will_attend })
       .eq('id', id);
 
-    if (!error) {
-      setLessons(prev =>
-        prev.map(l =>
-          l.id === id ? { ...l, will_attend: !will_attend } : l
-        )
-      );
+    if (error) return;
+
+    // If unsigning, create a new lesson for the same day/time next week
+    if (isUnsigning) {
+      const currentDate = new Date(lesson.date);
+      const nextWeekDate = new Date(currentDate);
+      nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+
+      const newLesson = {
+        course_name: lesson.course_name,
+        date: nextWeekDate.toISOString(),
+        email: email,
+        will_attend: true,
+        did_not_showed_up: false
+      };
+
+      const { data: insertedLesson, error: insertError } = await supabase
+        .from('attendance')
+        .insert(newLesson)
+        .select()
+        .single();
+
+      if (!insertError && insertedLesson) {
+        setLessons(prev =>
+          prev
+            .map(l => l.id === id ? { ...l, will_attend: !will_attend } : l)
+            .concat(insertedLesson)
+        );
+      }
+    } else {
+      // If signing in to an older lesson, remove the last unsigned lesson with same course, weekday, and time
+      const currentDate = new Date(lesson.date);
+      const currentDayOfWeek = currentDate.getDay();
+      const currentTime = currentDate.getHours() * 60 + currentDate.getMinutes();
+
+      const matchingUnsignedLessons = lessons.filter(l => {
+        if (l.course_name !== lesson.course_name || l.will_attend) return false;
+
+        const lessonDate = new Date(l.date);
+        const lessonDayOfWeek = lessonDate.getDay();
+        const lessonTime = lessonDate.getHours() * 60 + lessonDate.getMinutes();
+
+        return lessonDayOfWeek === currentDayOfWeek && lessonTime === currentTime;
+      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      const lastUnsignedLesson = matchingUnsignedLessons[0];
+
+      if (lastUnsignedLesson) {
+        const { error: deleteError } = await supabase
+          .from('attendance')
+          .delete()
+          .eq('id', lastUnsignedLesson.id);
+
+        if (!deleteError) {
+          setLessons(prev =>
+            prev
+              .map(l => l.id === id ? { ...l, will_attend: !will_attend } : l)
+              .filter(l => l.id !== lastUnsignedLesson.id)
+          );
+        }
+      } else {
+        // If no unsigned lesson to remove, just update the current lesson
+        setLessons(prev =>
+          prev.map(l =>
+            l.id === id ? { ...l, will_attend: !will_attend } : l
+          )
+        );
+      }
     }
   }
 
@@ -126,16 +194,16 @@ export default function Home() {
           <div className="flex flex-col gap-2 w-full max-w-4xl overflow-scroll h-96 pt-3">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b">
-                  <th className="py-2 text-left">Datum</th>
-                  <th className="py-2 text-left">Lekce</th>
-                  <th className="py-2 text-left">Stav</th>
-                  <th className="py-2 text-left">Akce</th>
+                <tr className="border-b text-center">
+                  <th className="py-2">Datum</th>
+                  <th className="py-2">Lekce</th>
+                  <th className="py-2">Stav</th>
+                  <th className="py-2">Akce</th>
                 </tr>
               </thead>
               <tbody>
                 {lessons.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((lesson) => (
-                  <tr key={lesson.id} className="border-b">
+                  <tr key={lesson.id} className="border-b text-center">
                     <td className="py-2 font-bold">{formatDate(lesson.date)}</td>
                     <td className="py-2">{lesson.course_name}</td>
                     <td className="py-2">{getLessonState(lesson)}</td>

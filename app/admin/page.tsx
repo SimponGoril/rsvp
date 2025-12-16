@@ -18,9 +18,11 @@ export default function Home() {
     const [password, setPassword] = useState("admin");
     const [show, setShow] = useState(false);
     const [lessons, setLessons] = useState<LessonAttendence[]>([])
-    const [newCourseName, setNewCourseName] = useState("Kurzy pro děti");
+    const [notification, setNotification] = useState("");
+    const [newCourseName, setNewCourseName] = useState("");
     const [newEmail, setNewEmail] = useState("");
     const [newDate, setNewDate] = useState("");
+    const [numberOfLessonsAdded, setNumberOfLessonsAdded] = useState(2);
     const [newSigned, setNewSigned] = useState(true);
     const [date, setDate] = useState<Date | undefined>(new Date())
 
@@ -32,21 +34,39 @@ export default function Home() {
     // }, {});
 
     const handleAddLesson = async () => {
-        const newLesson = {
-            course_name: newCourseName,
-            date: newDate,
-            email: newEmail,
-            will_attend: newSigned,
-            did_not_showed_up: false
-        };
+        if (!newDate) return;
+
+        const lessonsToAdd = [];
+        const timeZone = 'Europe/Prague';
+        const startDate = dayjs(newDate).tz(timeZone);
+
+        // Generate multiple lessons starting from newDate, each one week apart
+        for (let i = 0; i < numberOfLessonsAdded; i++) {
+            const lessonDate = startDate.add(i * 7, 'days');
+            lessonsToAdd.push({
+                course_name: newCourseName,
+                date: lessonDate,
+                email: newEmail,
+                will_attend: newSigned,
+                did_not_showed_up: false
+            });
+        }
 
         const { data, error } = await supabase
             .from('attendance')
-            .insert(newLesson)
-            .select()
+            .insert(lessonsToAdd)
+            .select();
 
-        if (!error) {
-            setLessons([...lessons, data[0]]);
+        if (!error && data) {
+            setNotification("Lekce byly úspěšně přidány");
+            setTimeout(() => setNotification(""), 3000);
+            setLessons([...lessons, ...data]);
+            // Reset form fields
+            setNewDate("");
+            setNewEmail("");
+            setNewCourseName("Kurzy pro děti");
+            setNewSigned(true);
+            setNumberOfLessonsAdded(2);
         }
     };
 
@@ -63,7 +83,7 @@ export default function Home() {
 
     const fetchAttendance = async () => {
         const { data } = await supabase.from('attendance').select('*')
-        if (!data?.length) {
+        if (!Array.isArray(data)) {
         } else {
             setShow(true);
             setLessons(data);
@@ -129,6 +149,65 @@ export default function Home() {
         return result;
     };
 
+    const displayWeekdayTimes = () => {
+        const weekdayMap: Record<string, number> = { 'pondělí': 1, 'úterý': 2, 'středa': 3, 'čtvrtek': 4, 'pátek': 5 };
+        const timeStrings = [
+            'pondělí 12:00', 'pondělí 15:00', 'pondělí 17:00',
+            'úterý 14:00', 'úterý 16:00', 'úterý 18:00',
+            'středa 13:30', 'středa 15:30', 'středa 18:00',
+            'čtvrtek 13:30', 'čtvrtek 15:30', 'čtvrtek 18:00',
+            'pátek 14:30'
+        ];
+
+        const times = timeStrings.map(t => {
+            const [weekday, time] = t.split(' ');
+            const [hours, minutes] = time.split(':').map(Number);
+            const targetDayOfWeek = weekdayMap[weekday];
+
+            // Find the closest future occurrence of this weekday/time starting from tomorrow
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowDayOfWeek = tomorrow.getDay() === 0 ? 7 : tomorrow.getDay();
+
+            // Calculate days from tomorrow until target
+            const daysFromTomorrow = (targetDayOfWeek - tomorrowDayOfWeek + 7) % 7;
+
+            const closestDate = new Date(tomorrow);
+            closestDate.setDate(closestDate.getDate() + daysFromTomorrow);
+            closestDate.setHours(hours, minutes, 0, 0);
+
+            return { display: t, datetime: closestDate.toISOString() };
+        });
+
+        return <div className="grid grid-cols-3 gap-4">
+            {times.map(t => {
+                const dateObj = new Date(t.datetime);
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                const hours = String(dateObj.getHours()).padStart(2, '0');
+                const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+                const fullDateTime = `${day}.${month}.${year} ${hours}:${minutes}`;
+
+                return <label key={t.display} className="flex items-start gap-2 cursor-pointer">
+                    <input
+                        type="radio"
+                        name="datetime"
+                        value={t.datetime}
+                        checked={newDate === t.datetime}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        className="mt-1"
+                    />
+                    <div className="flex flex-col">
+                        <span className="font-medium underline">{t.display}</span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">{fullDateTime}</span>
+                    </div>
+                </label>;
+            })}
+        </div>
+    }
+
     const LessonTables = (selectedDate?: Date) => {
         function formatLessonHeading(input: string) {
             const match = input.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/);
@@ -136,13 +215,12 @@ export default function Home() {
 
             const dateString = match[1];
             const courseName = input.replace(dateString, '').replace(/[-\s]+$/, '');
+            const d = dayjs.utc(dateString).tz('Europe/Prague');
+            const weekday = d.toDate().toLocaleDateString('cs-CZ', { weekday: 'long' });
+            const hours = d.format('HH');
+            const minutes = d.format('mm');
 
-            const d = new Date(dateString);
-            const weekday = d.toLocaleDateString('cs-CZ', { weekday: 'long' });
-            const hours = String(d.getHours()).padStart(2, '0');
-            const minutes = String(d.getMinutes()).padStart(2, '0');
-
-            return `${courseName} ${weekday} ${hours}:${minutes}`;
+            return `${courseName} ${weekday} - ${hours}:${minutes}`;
         }
 
         const data = getLessonsForDate(selectedDate);
@@ -244,10 +322,10 @@ export default function Home() {
                         collapsible
                         className="w-full">
                         <AccordionItem value="item-1">
-                            <AccordionTrigger>Přidat jednu lekci</AccordionTrigger>
+                            <AccordionTrigger>Přidat účast na lekcích</AccordionTrigger>
                             <AccordionContent className="flex flex-col gap-4">
-                                <div className="flex flex-col gap-2 w-full pt-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-                                    <label className="text-sm font-medium">Název lekce</label>
+                                <div className="flex flex-col gap-4 w-full pt-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                    <label className="text-sm font-bold">Název lekce</label>
                                     <div className="flex flex-col gap-4">
                                         <label className="flex items-center gap-2">
                                             <input
@@ -279,24 +357,22 @@ export default function Home() {
                                             />
                                             Intenzivní kurz kresby a malby pro mládež
                                         </label>
-                                        <label className="flex items-center gap-2">
-                                            <input
-                                                type="radio"
-                                                name="lesson"
-                                                value="Výtvarný workshop"
-                                                checked={newCourseName === "Výtvarný workshop"}
-                                                onChange={(e) => setNewCourseName(e.target.value)}
-                                            />
-                                            Výtvarný workshop
-                                        </label>
                                     </div>
-                                    <label className="text-sm font-medium">Datum a čas</label>
+                                    <label className="text-sm font-bold">Den a čas prvního kurzu</label>
+                                    {displayWeekdayTimes()}
+                                    <label className="text-sm font-bold">Počet přidávaných kurzů</label>
                                     <input
+                                        type="number"
+                                        value={numberOfLessonsAdded}
+                                        onChange={(e) => setNumberOfLessonsAdded(Number(e.target.value))}
+                                        className="border rounded-xl p-2"
+                                    />
+                                    {/* <input
                                         type="datetime-local"
                                         value={newDate}
                                         onChange={(e) => setNewDate(e.target.value)}
                                         className="border rounded-xl p-2"
-                                    />
+                                    /> */}
                                     <label className="text-sm font-medium">Email</label>
                                     <input
                                         type="email"
@@ -313,19 +389,14 @@ export default function Home() {
                                         Přihlášen
                                     </label>
 
-                                    <div className="flex justify-between">
+                                    <div className="flex flex-col">
                                         <button
                                             onClick={handleAddLesson}
                                             className="mt-2 rounded-xl border px-4 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:cursor-pointer w-40"
                                         >
                                             Přidat lekci
                                         </button>
-                                        {/* <button
-                                            //onClick={handleAddLesson}
-                                            className="mt-2 rounded-xl border px-4 py-2 font-medium bg-black text-white hover:cursor-pointer w-40"
-                                        >
-                                            Uložit
-                                        </button> */}
+                                        {notification ? <span className="text-green-600 pl-2">{notification}</span> : undefined}
                                     </div>
                                 </div>
                             </AccordionContent>
