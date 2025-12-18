@@ -6,7 +6,12 @@ import supabase from './utils/supabase'
 import { useState } from "react";
 import { formatDate, isInPast } from "./utils/utils";
 import { LessonAttendence } from "./types";
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -35,88 +40,128 @@ export default function Home() {
     setLessons([])
   }
 
-  const changeAttendence = async (id: number, will_attend: boolean) => {
+  const changeAttendance = async (id: number, will_attend: boolean) => {
     const lesson = lessons.find(l => l.id === id);
     if (!lesson) return;
 
-    const isUnsigning = will_attend; // if will_attend is true, they're currently signed in, so unsigning
+    const isUnsigning = will_attend;
 
-    // Update the current lesson
     const { error } = await supabase
       .from('attendance')
-      .update({ 'will_attend': !will_attend })
+      .update({ will_attend: !will_attend })
       .eq('id', id);
 
     if (error) return;
 
-    // If unsigning, create a new lesson for the same day/time next week
     if (isUnsigning) {
-      const currentDate = new Date(lesson.date);
-      const nextWeekDate = new Date(currentDate);
-      nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+      await handleUnsigning(lesson);
+    } else {
+      await handleResigning(lesson, id);
+    }
+  };
 
-      const newLesson = {
-        course_name: lesson.course_name,
-        date: nextWeekDate.toISOString(),
-        email: email,
-        will_attend: true,
-        did_not_showed_up: false
-      };
+  const handleUnsigning = async (attendance: LessonAttendence) => {
+    const timeZone = 'Europe/Prague';
+    const schedule = getAttendanceSchedule(attendance.date);
+    
+    // Find the latest active attendance with same course + weekday + time
+    const latestActiveMatch = findLatestActiveMatch(attendance, schedule);
+    
+    // Calculate new date: 7 days after the latest active match (or current attendance if no match)
+    const baseDate = latestActiveMatch ? latestActiveMatch.date : attendance.date;
+    const nextWeek = dayjs(baseDate).tz(timeZone).add(7, 'days');
+    
+    const newAttendance = {
+      course_name: attendance.course_name,
+      date: nextWeek,
+      email: email,
+      will_attend: true,
+      did_not_showed_up: false
+    };
 
-      const { data: insertedLesson, error: insertError } = await supabase
+    const { data: insertedAttendance, error } = await supabase
+      .from('attendance')
+      .insert(newAttendance)
+      .select()
+      .single();
+
+    if (!error && insertedAttendance) {
+      setLessons(prev => [
+        ...prev.map(l => l.id === attendance.id ? { ...l, will_attend: false } : l),
+        insertedAttendance
+      ]);
+    }
+  };
+
+  const findLatestActiveMatch = (
+    attendance: LessonAttendence,
+    targetSchedule: { dayOfWeek: number; timeInMinutes: number }
+  ): LessonAttendence | undefined => {
+    const now = dayjs();
+    
+    return lessons
+      .filter(l => {
+        // Must match course name
+        if (l.course_name !== attendance.course_name) return false;
+        
+        // Must be active (will_attend = true)
+        if (!l.will_attend) return false;
+        
+        // Must be in the future
+        if (dayjs(l.date).isBefore(now)) return false;
+        
+        // Must match weekday and time
+        const schedule = getAttendanceSchedule(l.date);
+        return schedule.dayOfWeek === targetSchedule.dayOfWeek && 
+               schedule.timeInMinutes === targetSchedule.timeInMinutes;
+      })
+      .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
+  };
+
+  const handleResigning = async (attendance: LessonAttendence, id: number) => {
+    const latestUnsignedMatch = findLatestUnsignedMatch(attendance);
+
+    if (latestUnsignedMatch) {
+      const { error } = await supabase
         .from('attendance')
-        .insert(newLesson)
-        .select()
-        .single();
+        .delete()
+        .eq('id', latestUnsignedMatch.id);
 
-      if (!insertError && insertedLesson) {
+      if (!error) {
         setLessons(prev =>
           prev
-            .map(l => l.id === id ? { ...l, will_attend: !will_attend } : l)
-            .concat(insertedLesson)
+            .map(l => l.id === id ? { ...l, will_attend: true } : l)
+            .filter(l => l.id !== latestUnsignedMatch.id)
         );
       }
     } else {
-      // If signing in to an older lesson, remove the last unsigned lesson with same course, weekday, and time
-      const currentDate = new Date(lesson.date);
-      const currentDayOfWeek = currentDate.getDay();
-      const currentTime = currentDate.getHours() * 60 + currentDate.getMinutes();
-
-      const matchingUnsignedLessons = lessons.filter(l => {
-        if (l.course_name !== lesson.course_name || l.will_attend) return false;
-
-        const lessonDate = new Date(l.date);
-        const lessonDayOfWeek = lessonDate.getDay();
-        const lessonTime = lessonDate.getHours() * 60 + lessonDate.getMinutes();
-
-        return lessonDayOfWeek === currentDayOfWeek && lessonTime === currentTime;
-      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      const lastUnsignedLesson = matchingUnsignedLessons[0];
-
-      if (lastUnsignedLesson) {
-        const { error: deleteError } = await supabase
-          .from('attendance')
-          .delete()
-          .eq('id', lastUnsignedLesson.id);
-
-        if (!deleteError) {
-          setLessons(prev =>
-            prev
-              .map(l => l.id === id ? { ...l, will_attend: !will_attend } : l)
-              .filter(l => l.id !== lastUnsignedLesson.id)
-          );
-        }
-      } else {
-        // If no unsigned lesson to remove, just update the current lesson
-        setLessons(prev =>
-          prev.map(l =>
-            l.id === id ? { ...l, will_attend: !will_attend } : l
-          )
-        );
-      }
+      setLessons(prev =>
+        prev.map(l => l.id === id ? { ...l, will_attend: true } : l)
+      );
     }
-  }
+  };
+
+  const findLatestUnsignedMatch = (attendance: LessonAttendence): LessonAttendence | undefined => {
+    const targetSchedule = getAttendanceSchedule(attendance.date);
+
+    return lessons
+      .filter(l => {
+        if (l.course_name !== attendance.course_name || l.will_attend) return false;
+
+        const schedule = getAttendanceSchedule(l.date);
+        return schedule.dayOfWeek === targetSchedule.dayOfWeek && 
+               schedule.timeInMinutes === targetSchedule.timeInMinutes;
+      })
+      .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
+  };
+
+  const getAttendanceSchedule = (dateString: string) => {
+    const date = dayjs(dateString);
+    return {
+      dayOfWeek: date.day(),
+      timeInMinutes: date.hour() * 60 + date.minute()
+    };
+  };
 
   function isAttendanceButtonActive(lessonDateInput: string | Date): boolean {
     const lessonDate = new Date(lessonDateInput);
@@ -209,7 +254,7 @@ export default function Home() {
                     <td className="py-2">{getLessonState(lesson)}</td>
                     <td className="py-2">
                       {isAttendanceButtonActive(lesson.date) ? undefined : <button
-                        onClick={() => { changeAttendence(lesson.id, lesson.will_attend) }}
+                        onClick={() => { changeAttendance(lesson.id, lesson.will_attend) }}
                         className="rounded-xl border px-3 py-1 cursor-pointer">
                         {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
                       </button>}
