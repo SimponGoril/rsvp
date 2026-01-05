@@ -9,6 +9,8 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { Calendar } from "../components/ui/calendar";
 import { validateAdminCredentials } from "../utils/validateAdmin";
+import { deleteAttendance, fetchAttendance, insertAttendance, updateAttendence } from "../lib/actions";
+import { set } from "date-fns";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -19,48 +21,37 @@ export default function Home() {
     const [show, setShow] = useState(false);
     const [lessons, setLessons] = useState<LessonAttendence[]>([])
     const [notification, setNotification] = useState("");
-    const [newCourseName, setNewCourseName] = useState("");
+    const [newCourseName, setNewCourseName] = useState("Kurz kresby a malby pro děti");
     const [newEmail, setNewEmail] = useState("");
     const [newDate, setNewDate] = useState("");
     const [numberOfLessonsAdded, setNumberOfLessonsAdded] = useState(2);
     const [newSigned, setNewSigned] = useState(true);
     const [date, setDate] = useState<Date | undefined>(new Date())
 
-    // const peopleMap = lessons.reduce<Record<string, LessonAttendence[]>>((acc, lesson) => {
-    //     const key = lesson.email ?? "unknown";
-    //     if (!acc[key]) acc[key] = [];
-    //     acc[key].push(lesson);
-    //     return acc;
-    // }, {});
-
     const handleAddLesson = async () => {
         if (!newDate) return;
 
         const lessonsToAdd = [];
-        const timeZone = 'Europe/Prague';
-        const startDate = dayjs(newDate).tz(timeZone);
+        const startDate = dayjs(newDate);
 
         // Generate multiple lessons starting from newDate, each one week apart
         for (let i = 0; i < numberOfLessonsAdded; i++) {
             const lessonDate = startDate.add(i * 7, 'days');
             lessonsToAdd.push({
                 course_name: newCourseName,
-                date: lessonDate,
+                date: lessonDate.toDate().toISOString(),
                 email: newEmail,
                 will_attend: newSigned,
                 did_not_showed_up: false
             });
         }
 
-        const { data, error } = await supabase
-            .from('attendance')
-            .insert(lessonsToAdd)
-            .select();
+        const lessons = await insertAttendance(lessonsToAdd) as LessonAttendence[];
 
-        if (!error && data) {
+        if (lessons) {
             setNotification("Lekce byly úspěšně přidány");
             setTimeout(() => setNotification(""), 3000);
-            setLessons([...lessons, ...data]);
+            setLessons(lessons);
             // Reset form fields
             setNewDate("");
             setNewEmail("");
@@ -70,65 +61,15 @@ export default function Home() {
         }
     };
 
-    const handleDeleteAttendance = async (id: number) => {
-        const { error } = await supabase
-            .from('attendance')
-            .delete()
-            .eq('id', id)
-
-        if (!error) {
-            setLessons((prev) => prev.filter((lesson) => lesson.id !== id));
-        }
-    }
-
-    const fetchAttendance = async () => {
-        const { data } = await supabase.from('attendance').select('*')
-        if (!Array.isArray(data)) {
-        } else {
-            setShow(true);
-            setLessons(data);
-        }
-    }
-
-    const handleChangeAttendence = async (id: number, will_attend: boolean) => {
-        const { error } = await supabase
-            .from('attendance')
-            .update({ 'will_attend': !will_attend })
-            .eq('id', id);
-
-        if (!error) {
-            setLessons(prev =>
-                prev.map(l =>
-                    l.id === id ? { ...l, will_attend: !will_attend } : l
-                )
-            );
-        }
-    }
-
-    const handleDidNotShowUp = async (id: number, did_not_showed_up: boolean) => {
-        const { error } = await supabase
-            .from('attendance')
-            .update({ 'did_not_showed_up': !did_not_showed_up })
-            .eq('id', id);
-
-        if (!error) {
-            setLessons(prev =>
-                prev.map(l =>
-                    l.id === id ? { ...l, did_not_showed_up: !did_not_showed_up } : l
-                )
-            );
-        }
-    }
-
     const signIn = async () => {
         if (await validateAdminCredentials(email, password)) {
-            fetchAttendance();
+            setLessons(await fetchAttendance() || []);
+            setShow(true);
         } else {
             setLoginError("Neplatné přihlašovací údaje");
         }
     }
 
-    // Get lessons for the selected date (based on the calendar input).
     const getLessonsForDate = (dateArg?: Date) => {
         const timeZone = 'Europe/Prague';
         const target = dayjs.tz(dateArg ?? new Date(), timeZone).format('YYYY-MM-DD');
@@ -181,7 +122,7 @@ export default function Home() {
         });
 
         return <div className="grid grid-cols-3 gap-4">
-            {times.map(t => {
+            {times.map((t, i) => {
                 const dateObj = new Date(t.datetime);
                 const day = String(dateObj.getDate()).padStart(2, '0');
                 const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -195,7 +136,7 @@ export default function Home() {
                         type="radio"
                         name="datetime"
                         value={t.datetime}
-                        checked={newDate === t.datetime}
+                        checked={newDate ? newDate === t.datetime : i === 0}
                         onChange={(e) => setNewDate(e.target.value)}
                         className="mt-1"
                     />
@@ -253,19 +194,19 @@ export default function Home() {
                                                 <td className="px-1 py-3 text-center flex gap-1 justify-center">
                                                     {!isInPast(p.date) ? (
                                                         <button
-                                                            onClick={() => { handleChangeAttendence(p.id, p.will_attend) }}
+                                                            onClick={async () => setLessons(await updateAttendence(p.id, !p.will_attend, p.did_not_showed_up))}
                                                             className="rounded-lg border border-gray-300 dark:border-gray-600 px-1 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
                                                             {p.will_attend ? 'Odhlásit' : 'Přihlásit'}
                                                         </button>
                                                     ) : p.will_attend ? (
                                                         <button
-                                                            onClick={() => handleDidNotShowUp(p.id, p.did_not_showed_up || false)}
+                                                            onClick={async () => setLessons(await updateAttendence(p.id, p.will_attend, !p.did_not_showed_up))}
                                                             className="rounded-lg border border-red-300 dark:border-red-600 px-1 py-1.5 text-red-600 dark:text-red-400 cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium">
                                                             {!p.did_not_showed_up ? 'Neomluveno' : 'Omluveno'}
                                                         </button>
                                                     ) : undefined}
                                                     <button
-                                                        onClick={() => handleDeleteAttendance(p.id)}
+                                                        onClick={async () => setLessons(await deleteAttendance(p.id))}
                                                         className="rounded-lg border border-red-300 dark:border-red-600 px-1 py-1.5 text-red-600 dark:text-red-400 cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm font-medium">
                                                         Smazat
                                                     </button>

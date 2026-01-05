@@ -6,12 +6,7 @@ import supabase from './utils/supabase'
 import { useState } from "react";
 import { formatDate, isInPast } from "./utils/utils";
 import { LessonAttendence } from "./types";
-import dayjs from "dayjs";
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
+import { changeAttendance, fetchAttendance } from "./lib/actions";
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -19,19 +14,16 @@ export default function Home() {
   const [show, setShow] = useState(false);
   const [lessons, setLessons] = useState<LessonAttendence[]>([])
 
-  const fetchAttendance = async () => {
-    const { data } = await supabase.from('attendance').select('*').eq('email', email)
-    if (!data?.length) {
+  const signIn = async () => {
+    const lessons = await fetchAttendance(email);
+    if (!lessons.length) {
       setError("Pro tento email nemáme žádné rezervace");
+      return;
     } else {
       setShow(true);
       setError("")
-      setLessons(data);
+      setLessons(lessons);
     }
-  }
-
-  const signIn = () => {
-    fetchAttendance();
   }
 
   const signOut = () => {
@@ -39,129 +31,6 @@ export default function Home() {
     setEmail("")
     setLessons([])
   }
-
-  const changeAttendance = async (id: number, will_attend: boolean) => {
-    const lesson = lessons.find(l => l.id === id);
-    if (!lesson) return;
-
-    const isUnsigning = will_attend;
-
-    const { error } = await supabase
-      .from('attendance')
-      .update({ will_attend: !will_attend })
-      .eq('id', id);
-
-    if (error) return;
-
-    if (isUnsigning) {
-      await handleUnsigning(lesson);
-    } else {
-      await handleResigning(lesson, id);
-    }
-  };
-
-  const handleUnsigning = async (attendance: LessonAttendence) => {
-    const timeZone = 'Europe/Prague';
-    const schedule = getAttendanceSchedule(attendance.date);
-    
-    // Find the latest active attendance with same course + weekday + time
-    const latestActiveMatch = findLatestActiveMatch(attendance, schedule);
-    
-    // Calculate new date: 7 days after the latest active match (or current attendance if no match)
-    const baseDate = latestActiveMatch ? latestActiveMatch.date : attendance.date;
-    const nextWeek = dayjs(baseDate).tz(timeZone).add(7, 'days');
-    
-    const newAttendance = {
-      course_name: attendance.course_name,
-      date: nextWeek,
-      email: email,
-      will_attend: true,
-      did_not_showed_up: false
-    };
-
-    const { data: insertedAttendance, error } = await supabase
-      .from('attendance')
-      .insert(newAttendance)
-      .select()
-      .single();
-
-    if (!error && insertedAttendance) {
-      setLessons(prev => [
-        ...prev.map(l => l.id === attendance.id ? { ...l, will_attend: false } : l),
-        insertedAttendance
-      ]);
-    }
-  };
-
-  const findLatestActiveMatch = (
-    attendance: LessonAttendence,
-    targetSchedule: { dayOfWeek: number; timeInMinutes: number }
-  ): LessonAttendence | undefined => {
-    const now = dayjs();
-    
-    return lessons
-      .filter(l => {
-        // Must match course name
-        if (l.course_name !== attendance.course_name) return false;
-        
-        // Must be active (will_attend = true)
-        if (!l.will_attend) return false;
-        
-        // Must be in the future
-        if (dayjs(l.date).isBefore(now)) return false;
-        
-        // Must match weekday and time
-        const schedule = getAttendanceSchedule(l.date);
-        return schedule.dayOfWeek === targetSchedule.dayOfWeek && 
-               schedule.timeInMinutes === targetSchedule.timeInMinutes;
-      })
-      .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
-  };
-
-  const handleResigning = async (attendance: LessonAttendence, id: number) => {
-    const latestUnsignedMatch = findLatestUnsignedMatch(attendance);
-
-    if (latestUnsignedMatch) {
-      const { error } = await supabase
-        .from('attendance')
-        .delete()
-        .eq('id', latestUnsignedMatch.id);
-
-      if (!error) {
-        setLessons(prev =>
-          prev
-            .map(l => l.id === id ? { ...l, will_attend: true } : l)
-            .filter(l => l.id !== latestUnsignedMatch.id)
-        );
-      }
-    } else {
-      setLessons(prev =>
-        prev.map(l => l.id === id ? { ...l, will_attend: true } : l)
-      );
-    }
-  };
-
-  const findLatestUnsignedMatch = (attendance: LessonAttendence): LessonAttendence | undefined => {
-    const targetSchedule = getAttendanceSchedule(attendance.date);
-
-    return lessons
-      .filter(l => {
-        if (l.course_name !== attendance.course_name || l.will_attend) return false;
-
-        const schedule = getAttendanceSchedule(l.date);
-        return schedule.dayOfWeek === targetSchedule.dayOfWeek && 
-               schedule.timeInMinutes === targetSchedule.timeInMinutes;
-      })
-      .sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf())[0];
-  };
-
-  const getAttendanceSchedule = (dateString: string) => {
-    const date = dayjs(dateString);
-    return {
-      dayOfWeek: date.day(),
-      timeInMinutes: date.hour() * 60 + date.minute()
-    };
-  };
 
   function isAttendanceButtonActive(lessonDateInput: string | Date): boolean {
     const lessonDate = new Date(lessonDateInput);
@@ -225,7 +94,7 @@ export default function Home() {
           <div className="flex justify-between items-center pb-4">
             <div>
               <h2 className="font-extrabold">Přihlášen/a jako {email}</h2>
-              <h3 className="italic text-gray-700">Počet zbývajících lekcí: {lessons.filter(l => !isInPast(l.date)).length}</h3>
+              <h3 className="italic text-gray-700">Počet zbývajících lekcí: {lessons.filter(l => !isInPast(l.date) && l.will_attend).length}</h3>
             </div>
             <div>
               <button
@@ -254,7 +123,9 @@ export default function Home() {
                     <td className="py-2">{getLessonState(lesson)}</td>
                     <td className="py-2">
                       {isAttendanceButtonActive(lesson.date) ? undefined : <button
-                        onClick={() => { changeAttendance(lesson.id, lesson.will_attend) }}
+                        onClick={async () => {
+                          const updatedLessons = await changeAttendance(lesson.id, email, lesson.will_attend);
+                          setLessons(updatedLessons);}}
                         className="rounded-xl border px-3 py-1 cursor-pointer">
                         {lesson.will_attend ? "Odhlásit" : "Přihlásit"}
                       </button>}
