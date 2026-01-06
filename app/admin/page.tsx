@@ -1,7 +1,6 @@
 "use client"
 import { useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../components/ui/accordion";
-import supabase from "../utils/supabase";
 import { isInPast, isToday } from "../utils/utils";
 import { LessonAttendence } from "../types";
 import dayjs from 'dayjs';
@@ -9,8 +8,8 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import { Calendar } from "../components/ui/calendar";
 import { validateAdminCredentials } from "../utils/validateAdmin";
-import { deleteAttendance, fetchAttendance, insertAttendance, updateAttendence } from "../lib/actions";
-import { set } from "date-fns";
+import { changeAttendanceAdmin, deleteAttendance, fetchAttendance, insertAttendance, updateAttendence } from "../lib/actions";
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -26,27 +25,13 @@ export default function Home() {
     const [newDate, setNewDate] = useState("");
     const [numberOfLessonsAdded, setNumberOfLessonsAdded] = useState(2);
     const [newSigned, setNewSigned] = useState(true);
+    const [addAfter, setAddAfter] = useState(true);
     const [date, setDate] = useState<Date | undefined>(new Date())
 
     const handleAddLesson = async () => {
         if (!newDate) return;
 
-        const lessonsToAdd = [];
-        const startDate = dayjs(newDate);
-
-        // Generate multiple lessons starting from newDate, each one week apart
-        for (let i = 0; i < numberOfLessonsAdded; i++) {
-            const lessonDate = startDate.add(i * 7, 'days');
-            lessonsToAdd.push({
-                course_name: newCourseName,
-                date: lessonDate.toDate().toISOString(),
-                email: newEmail,
-                will_attend: newSigned,
-                did_not_showed_up: false
-            });
-        }
-
-        const lessons = await insertAttendance(lessonsToAdd) as LessonAttendence[];
+        const lessons = await insertAttendance(newDate, newCourseName, newEmail, numberOfLessonsAdded, newSigned, addAfter) as LessonAttendence[];
 
         if (lessons) {
             setNotification("Lekce byly úspěšně přidány");
@@ -136,7 +121,7 @@ export default function Home() {
                         type="radio"
                         name="datetime"
                         value={t.datetime}
-                        checked={newDate ? newDate === t.datetime : i === 0}
+                        checked={newDate === t.datetime}
                         onChange={(e) => setNewDate(e.target.value)}
                         className="mt-1"
                     />
@@ -164,15 +149,15 @@ export default function Home() {
             return `${courseName} ${weekday} - ${hours}:${minutes}`;
         }
 
-        const data = getLessonsForDate(selectedDate);
+        const data = Object.entries(getLessonsForDate(selectedDate)).sort().reverse();
 
         return (
             <Accordion type="multiple" className="w-full">
-                {Object.entries(data).sort().reverse().map(([key, participants]) => (
+                {data.map(([key, participants]) => (
                     <AccordionItem key={key} value={key}>
                         <AccordionTrigger>
                             <div className="font-semibold text-base">
-                                {formatLessonHeading(key)} {isToday(key) ? <span className="ml-2 italic text-blue-600 dark:text-blue-400 text-sm font-normal">(dnes)</span> : undefined}
+                                {formatLessonHeading(key)} ({participants.filter(p => p.will_attend).length}) {isToday(key) ? <span className="ml-2 italic text-blue-600 dark:text-blue-400 text-sm font-normal">(dnes)</span> : undefined}
                             </div>
                         </AccordionTrigger>
                         <AccordionContent>
@@ -194,7 +179,7 @@ export default function Home() {
                                                 <td className="px-1 py-3 text-center flex gap-1 justify-center">
                                                     {!isInPast(p.date) ? (
                                                         <button
-                                                            onClick={async () => setLessons(await updateAttendence(p.id, !p.will_attend, p.did_not_showed_up))}
+                                                            onClick={async () => setLessons(await changeAttendanceAdmin(p.id, p.email, p.will_attend))}
                                                             className="rounded-lg border border-gray-300 dark:border-gray-600 px-1 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
                                                             {p.will_attend ? 'Odhlásit' : 'Přihlásit'}
                                                         </button>
@@ -329,7 +314,14 @@ export default function Home() {
                                         />
                                         Přihlášen
                                     </label>
-
+                                    <label className="flex items-center gap-2 text-sm font-medium">
+                                        <input
+                                            type="checkbox"
+                                            checked={addAfter}
+                                            onChange={(e) => setAddAfter(e.target.checked)}
+                                        />
+                                        Přidat za poslední aktivní lekci
+                                    </label>
                                     <div className="flex flex-col">
                                         <button
                                             onClick={handleAddLesson}
