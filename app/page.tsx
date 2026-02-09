@@ -6,7 +6,7 @@ import supabase from './utils/supabase'
 import { useState } from "react";
 import { formatDate, isInPast } from "./utils/utils";
 import { LessonAttendence } from "./types";
-import { changeAttendance, fetchAttendance } from "./lib/actions";
+import { changeAttendance, fetchAttendance, updateAttendence } from "./lib/actions";
 
 export default function Home() {
   const [email, setEmail] = useState("");
@@ -124,7 +124,7 @@ export default function Home() {
                     <td className="py-2">
                       {isAttendanceButtonActive(lesson.date) ? undefined : <button
                         onClick={async () => {
-                          const updatedLessons = await changeAttendance(lesson.id, email, lesson.will_attend);
+                          const updatedLessons = await updateAttendence(lesson.id, !lesson.will_attend, lesson.did_not_showed_up);
                           setLessons(updatedLessons);}}
                         className="rounded-xl border px-3 py-1 cursor-pointer">
                         {lesson.will_attend ? "Odhlásit" : "Přihlásit"}

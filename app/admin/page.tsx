@@ -179,7 +179,7 @@ export default function Home() {
                                                 <td className="px-1 py-3 text-center flex gap-1 justify-center">
                                                     {!isInPast(p.date) ? (
                                                         <button
-                                                            onClick={async () => setLessons(await changeAttendanceAdmin(p.id, p.email, p.will_attend))}
+                                                            onClick={async () => setLessons(await updateAttendence(p.id, !p.will_attend, p.will_attend))}
                                                             className="rounded-lg border border-gray-300 dark:border-gray-600 px-1 py-1.5 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
                                                             {p.will_attend ? 'Odhlásit' : 'Přihlásit'}
                                                         </button>
