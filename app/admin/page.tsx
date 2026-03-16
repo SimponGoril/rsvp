@@ -29,7 +29,11 @@ export default function Home() {
     const [date, setDate] = useState<Date | undefined>(new Date())
 
     const handleAddLesson = async () => {
-        if (!newDate) return;
+        if (!newDate || !newEmail) {
+            setNotification("Prosím, vyplňte všechna povinná pole - email a datum");
+            setTimeout(() => setNotification(""), 3000);
+            return;
+        }
 
         const lessons = await insertAttendance(newDate, newCourseName, newEmail, numberOfLessonsAdded, newSigned, addAfter) as LessonAttendence[];
 
@@ -251,6 +255,13 @@ export default function Home() {
                             <AccordionTrigger>Přidat účast na lekcích</AccordionTrigger>
                             <AccordionContent className="flex flex-col gap-4">
                                 <div className="flex flex-col gap-4 w-full pt-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                    <label className="text-sm font-medium">Email</label>
+                                    <input
+                                        type="email"
+                                        value={newEmail}
+                                        onChange={(e) => setNewEmail(e.target.value)}
+                                        className="border rounded-xl p-2"
+                                    />
                                     <label className="text-sm font-bold">Název lekce</label>
                                     <div className="flex flex-col gap-4">
                                         <label className="flex items-center gap-2">
@@ -299,13 +310,6 @@ export default function Home() {
                                         onChange={(e) => setNewDate(e.target.value)}
                                         className="border rounded-xl p-2"
                                     /> */}
-                                    <label className="text-sm font-medium">Email</label>
-                                    <input
-                                        type="email"
-                                        value={newEmail}
-                                        onChange={(e) => setNewEmail(e.target.value)}
-                                        className="border rounded-xl p-2"
-                                    />
                                     <label className="flex items-center gap-2 text-sm font-medium">
                                         <input
                                             type="checkbox"
